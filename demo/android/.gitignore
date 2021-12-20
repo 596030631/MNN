@@ -1,4 +1,3 @@
-*.iml
 .gradle
 /local.properties
 /.idea/libraries
@@ -9,3 +8,5 @@
 /captures
 .externalNativeBuild
 /app/build
+/app/.cxx/cmake/debug/armeabi-v7a/.ninja_deps
+/app/.cxx/
