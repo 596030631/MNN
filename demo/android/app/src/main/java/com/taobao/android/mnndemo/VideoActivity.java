@@ -6,30 +6,36 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.hardware.SensorManager;
+import android.hardware.usb.UsbDevice;
+import android.media.CamcorderProfile;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.support.v7.app.AppCompatActivity;
+
+import androidx.appcompat.app.AppCompatActivity;
+
 import android.os.Bundle;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.OrientationEventListener;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewStub;
 import android.view.WindowManager;
 import android.widget.AdapterView;
-import android.widget.FrameLayout;
-import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.android.uvccamera.IFrameCallback;
+import com.android.uvccamera.USBMonitor;
+import com.android.uvccamera.UVCCamera;
 import com.taobao.android.mnn.MNNForwardType;
 import com.taobao.android.mnn.MNNImageProcess;
 import com.taobao.android.mnn.MNNNetInstance;
 import com.taobao.android.utils.Common;
 import com.taobao.android.utils.TxtFileReader;
 
+import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -47,18 +53,23 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
     private final String MobileModelFileName = "MobileNet/v2/mobilenet_v2.caffe.mnn";
     private final String MobileWordsFileName = "MobileNet/synset_words.txt";
 
+    private final String NanodetlFileName = "NanodetNet/nanodet-320.mnn";
+    private final String NanodetWordsFileName = "NanodetNet/nanodet.txt";
+
     private final String SqueezeModelFileName = "SqueezeNet/v1.1/squeezenet_v1.1.caffe.mnn";
     private final String SqueezeWordsFileName = "SqueezeNet/squeezenet.txt";
 
     private String mMobileModelPath;
-    private List<String> mMobileTaiWords;
+    private String mNanodetModelPath;
     private String mSqueezeModelPath;
+
+    private List<String> mMobileTaiWords;
+    private List<String> mNanodetTaiWords;
     private List<String> mSqueezeTaiWords;
 
     private int mSelectedModelIndex;// current using modle
     private final MNNNetInstance.Config mConfig = new MNNNetInstance.Config();// session config
 
-    private CameraView mCameraView;
     private Spinner mForwardTypeSpinner;
     private Spinner mThreadNumSpinner;
     private Spinner mModelSpinner;
@@ -78,41 +89,56 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
     HandlerThread mThread;
     Handler mHandle;
 
-    private AtomicBoolean mLockUIRender = new AtomicBoolean(false);
-    private AtomicBoolean mDrop = new AtomicBoolean(false);
+    private UVCCamera camera;
+    private final AtomicBoolean mLockUIRender = new AtomicBoolean(false);
+    private final AtomicBoolean mDrop = new AtomicBoolean(false);
 
     private MNNNetInstance mNetInstance;
     private MNNNetInstance.Session mSession;
     private MNNNetInstance.Session.Tensor mInputTensor;
+    private boolean selectCamera = false;
 
-    private int mRotateDegree;// 0/90/180/360
-
-    /**
-     * 监听屏幕旋转
-     */
-    void detectScreenRotate() {
-        OrientationEventListener orientationListener = new OrientationEventListener(this,
-                SensorManager.SENSOR_DELAY_NORMAL) {
-            @Override
-            public void onOrientationChanged(int orientation) {
-
-                if (orientation == OrientationEventListener.ORIENTATION_UNKNOWN) {
-                    return;  //手机平放时，检测不到有效的角度
-                }
-
-                //可以根据不同角度检测处理，这里只检测四个角度的改变
-                orientation = (orientation + 45) / 90 * 90;
-                mRotateDegree = orientation % 360;
+    private final USBMonitor.OnDeviceConnectListener onDeviceConnectListener = new USBMonitor.OnDeviceConnectListener() {
+        @Override
+        public void onAttach(UsbDevice device) {
+            if ((device.getProductId() == 0x1001 && device.getVendorId() == 0x1d6c) || (device.getProductId() == 0x636b && device.getVendorId() == 0xc45)) {
+                Log.d(TAG, "请求相机权限");
+                usbMonitor.requestPermission(device);
+            } else {
+                Log.d(TAG, "不符合相机标号");
             }
-        };
-
-
-        if (orientationListener.canDetectOrientation()) {
-            orientationListener.enable();
-        } else {
-            orientationListener.disable();
         }
-    }
+
+        @Override
+        public void onDetach(UsbDevice device) {
+
+        }
+
+        @Override
+        public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
+            if (selectCamera) return;
+            selectCamera = true;
+            camera = new UVCCamera();
+            camera.open(ctrlBlock);
+            camera.setPreviewDisplay(mCameraView.getHolder());
+            camera.setPreviewSize(640, 480, UVCCamera.FRAME_FORMAT_YUYV);
+            camera.startPreview();
+
+            handlePreViewCallBack();
+        }
+
+        @Override
+        public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+
+        }
+
+        @Override
+        public void onCancel(UsbDevice device) {
+
+        }
+    };
+    private USBMonitor usbMonitor;
+    private SurfaceView mCameraView;
 
     private void prepareModels() {
 
@@ -120,6 +146,14 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         try {
             Common.copyAssetResource2File(getBaseContext(), MobileModelFileName, mMobileModelPath);
             mMobileTaiWords = TxtFileReader.getUniqueUrls(getBaseContext(), MobileWordsFileName, Integer.MAX_VALUE);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+
+        mNanodetModelPath = getCacheDir() + "nanodet-320.mnn";
+        try {
+            Common.copyAssetResource2File(getBaseContext(), NanodetlFileName, mNanodetModelPath);
+            mNanodetTaiWords = TxtFileReader.getUniqueUrls(getBaseContext(), NanodetWordsFileName, Integer.MAX_VALUE);
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
@@ -148,6 +182,8 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         if (mSelectedModelIndex == 0) {
             modelPath = mMobileModelPath;
         } else if (mSelectedModelIndex == 1) {
+            modelPath = mNanodetModelPath;
+        } else if (mSelectedModelIndex == 2) {
             modelPath = mSqueezeModelPath;
         }
 
@@ -176,7 +212,7 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
 
-        detectScreenRotate();
+        mCameraView = findViewById(R.id.camera_view_abc);
 
         mSelectedModelIndex = 0;
         mConfig.numThread = 4;
@@ -187,7 +223,7 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
 
         mForwardTypeSpinner = (Spinner) findViewById(R.id.forwardTypeSpinner);
         mThreadNumSpinner = (Spinner) findViewById(R.id.threadsSpinner);
-        mThreadNumSpinner.setSelection(2);
+        mThreadNumSpinner.setSelection(3);
         mModelSpinner = (Spinner) findViewById(R.id.modelTypeSpinner);
         mMoreDemoSpinner = (Spinner) findViewById(R.id.MoreDemo);
 
@@ -205,15 +241,6 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         mLockUIRender.set(true);
         clearUIForPrepareNet();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.CAMERA}, 10);
-            } else {
-                handlePreViewCallBack();
-            }
-        } else {
-            handlePreViewCallBack();
-        }
 
         mThread = new HandlerThread("MNNNet");
         mThread.start();
@@ -226,209 +253,197 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             }
         });
 
+
+        mHandle.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                usbMonitor = new USBMonitor(VideoActivity.this);
+                usbMonitor.setOnDeviceConnectListener(onDeviceConnectListener);
+                usbMonitor.register();
+            }
+        }, 5_000);
     }
 
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
 
-        if (10 == requestCode) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                handlePreViewCallBack();
-            } else {
-                Toast.makeText(this, "没有获得必要的权限", Toast.LENGTH_SHORT).show();
-            }
-        }
-
+    private static byte[] getBufferBytes(ByteBuffer frame) {
+        int len = frame.limit() - frame.position();
+        byte[] bytes1 = new byte[len];
+        frame.get(bytes1);
+        return bytes1;
     }
 
     private void handlePreViewCallBack() {
 
-        ViewStub stub = (ViewStub) findViewById(R.id.stub);
-        stub.inflate();
 
-        mCameraView = (CameraView) findViewById(R.id.camera_view);
+        camera.setFrameCallback(frame -> {
+            Log.d(TAG, "_");
 
-        mCameraView.setPreviewCallback(new CameraView.PreviewCallback() {
-            @Override
-            public void onGetPreviewOptimalSize(int optimalWidth, int optimalHeight) {
-
-                // adjust video preview size according to screen size
-                DisplayMetrics metric = new DisplayMetrics();
-                getWindowManager().getDefaultDisplay().getMetrics(metric);
-                int fixedVideoHeight = metric.widthPixels * optimalWidth / optimalHeight;
-
-                FrameLayout layoutVideo = findViewById(R.id.videoLayout);
-                RelativeLayout.LayoutParams params = (RelativeLayout.LayoutParams) layoutVideo.getLayoutParams();
-                params.height = fixedVideoHeight;
-                layoutVideo.setLayoutParams(params);
+            if (mLockUIRender.get()) {
+                return;
             }
 
-            @Override
-            public void onPreviewFrame(final byte[] data, final int imageWidth, final int imageHeight, final int angle) {
 
-                if (mLockUIRender.get()) {
-                    return;
-                }
+            if (mDrop.get()) {
+                Log.w(TAG, "drop frame , net running too slow !!");
+            } else {
+                mDrop.set(true);
+                mHandle.post(() -> {
+                    mDrop.set(false);
+                    if (mLockUIRender.get()) {
+                        return;
+                    }
 
+                    // calculate corrected angle based on camera orientation and mobile rotate degree. (back camrea)
+                    int needRotateAngle = (0) % 360;
 
-                if (mDrop.get()) {
-                    Log.w(TAG, "drop frame , net running too slow !!");
-                } else {
-                    mDrop.set(true);
-                    mHandle.post(new Runnable() {
+                    /*
+                     *  convert data to input tensor
+                     */
+                    final MNNImageProcess.Config config = new MNNImageProcess.Config();
+                    if (mSelectedModelIndex == 0) {
+                        // normalization params
+                        config.mean = new float[]{103.94f, 116.78f, 123.68f};
+                        config.normal = new float[]{0.017f, 0.017f, 0.017f};
+                        config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                        config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                        // matrix transform: dst to src
+                        Matrix matrix = new Matrix();
+                        matrix.postScale(MobileInputWidth / (float) 640, MobileInputHeight / (float) 480);
+                        matrix.postRotate(needRotateAngle, MobileInputWidth / 2, MobileInputHeight / 2);
+                        matrix.invert(matrix);
+
+                        MNNImageProcess.convertBuffer(getBufferBytes(frame), 640, 480, mInputTensor, config, matrix);
+
+                    } else if (mSelectedModelIndex == 1) {
+                        // input data format
+                        config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                        config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                        // matrix transform: dst to src
+                        final Matrix matrix = new Matrix();
+                        matrix.postScale(SqueezeInputWidth / (float) (float) 640, SqueezeInputHeight / (float) 480);
+                        matrix.postRotate(needRotateAngle, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
+                        matrix.invert(matrix);
+
+                        MNNImageProcess.convertBuffer(getBufferBytes(frame), 640, 480, mInputTensor, config, matrix);
+                    }
+
+                    final long startTimestamp = System.nanoTime();
+                    /**
+                     * inference
+                     */
+                    mSession.run();
+
+                    /**
+                     * get output tensor
+                     */
+                    MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
+
+                    float[] result = output.getFloatData();// get float results
+                    final long endTimestamp = System.nanoTime();
+                    final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
+
+                    if (result.length > MAX_CLZ_SIZE) {
+                        Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
+                    }
+
+                    final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
+                    for (int i = 0; i < result.length; i++) {
+                        float confidence = result[i];
+                        if (confidence > 0.01) {
+                            maybes.add(new AbstractMap.SimpleEntry<Integer, Float>(i, confidence));
+                        }
+                    }
+
+                    Collections.sort(maybes, new Comparator<Map.Entry<Integer, Float>>() {
                         @Override
-                        public void run() {
-                            mDrop.set(false);
-                            if (mLockUIRender.get()) {
-                                return;
+                        public int compare(Map.Entry<Integer, Float> o1, Map.Entry<Integer, Float> o2) {
+                            if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
+                                return 0;
                             }
-
-                            // calculate corrected angle based on camera orientation and mobile rotate degree. (back camrea)
-                            int needRotateAngle = (angle + mRotateDegree) % 360;
-
-                            /*
-                             *  convert data to input tensor
-                             */
-                            final MNNImageProcess.Config config = new MNNImageProcess.Config();
-                            if (mSelectedModelIndex == 0) {
-                                // normalization params
-                                config.mean = new float[]{103.94f, 116.78f, 123.68f};
-                                config.normal = new float[]{0.017f, 0.017f, 0.017f};
-                                config.source = MNNImageProcess.Format.YUV_NV21;// input source format
-                                config.dest = MNNImageProcess.Format.BGR;// input data format
-
-                                // matrix transform: dst to src
-                                Matrix matrix = new Matrix();
-                                matrix.postScale(MobileInputWidth / (float) imageWidth, MobileInputHeight / (float) imageHeight);
-                                matrix.postRotate(needRotateAngle, MobileInputWidth / 2, MobileInputHeight / 2);
-                                matrix.invert(matrix);
-
-                                MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
-
-                            } else if (mSelectedModelIndex == 1) {
-                                // input data format
-                                config.source = MNNImageProcess.Format.YUV_NV21;// input source format
-                                config.dest = MNNImageProcess.Format.BGR;// input data format
-
-                                // matrix transform: dst to src
-                                final Matrix matrix = new Matrix();
-                                matrix.postScale(SqueezeInputWidth / (float) (float) imageWidth, SqueezeInputHeight / (float) imageHeight);
-                                matrix.postRotate(needRotateAngle, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
-                                matrix.invert(matrix);
-
-                                MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
-                            }
-
-                            final long startTimestamp = System.nanoTime();
-                            /**
-                             * inference
-                             */
-                            mSession.run();
-
-                            /**
-                             * get output tensor
-                             */
-                            MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
-
-                            float[] result = output.getFloatData();// get float results
-                            final long endTimestamp = System.nanoTime();
-                            final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
-
-                            if (result.length > MAX_CLZ_SIZE) {
-                                Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
-                            }
-
-                            final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
-                            for (int i = 0; i < result.length; i++) {
-                                float confidence = result[i];
-                                if (confidence > 0.01) {
-                                    maybes.add(new AbstractMap.SimpleEntry<Integer, Float>(i, confidence));
-                                }
-                            }
-
-                            Collections.sort(maybes, new Comparator<Map.Entry<Integer, Float>>() {
-                                @Override
-                                public int compare(Map.Entry<Integer, Float> o1, Map.Entry<Integer, Float> o2) {
-                                    if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
-                                        return 0;
-                                    }
-                                    return o1.getValue() > o2.getValue() ? -1 : 1;
-                                }
-                            });
-
-                            // show results on ui
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-
-                                    if (maybes.size() == 0) {
-                                        mFirstResult.setText("no data");
-                                        mSecondResult.setText("");
-                                        mThirdResult.setText("");
-                                    }
-                                    if (maybes.size() > 0) {
-                                        mFirstResult.setTextColor(maybes.get(0).getValue() > 0.2 ? Color.BLACK : Color.parseColor("#a4a4a4"));
-                                        final Integer iKey = maybes.get(0).getKey();
-                                        final Float fValue = maybes.get(0).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mFirstResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-
-                                    }
-                                    if (maybes.size() > 1) {
-                                        final Integer iKey = maybes.get(1).getKey();
-                                        final Float fValue = maybes.get(1).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mSecondResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-
-                                    }
-                                    if (maybes.size() > 2) {
-                                        final Integer iKey = maybes.get(2).getKey();
-                                        final Float fValue = maybes.get(2).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mThirdResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-                                    }
-
-                                    mTimeTextView.setText("cost time：" + inferenceTimeCost + "ms");
-                                }
-                            });
-
+                            return o1.getValue() > o2.getValue() ? -1 : 1;
                         }
                     });
-                }
+
+                    // show results on ui
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+
+                            if (maybes.size() == 0) {
+                                mFirstResult.setText("no data");
+                                mSecondResult.setText("");
+                                mThirdResult.setText("");
+                            }
+                            if (maybes.size() > 0) {
+                                mFirstResult.setTextColor(maybes.get(0).getValue() > 0.2 ? Color.BLACK : Color.parseColor("#a4a4a4"));
+                                final Integer iKey = maybes.get(0).getKey();
+                                final Float fValue = maybes.get(0).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mFirstResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+                            }
+                            if (maybes.size() > 1) {
+                                final Integer iKey = maybes.get(1).getKey();
+                                final Float fValue = maybes.get(1).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mSecondResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+                            }
+                            if (maybes.size() > 2) {
+                                final Integer iKey = maybes.get(2).getKey();
+                                final Float fValue = maybes.get(2).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mThirdResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+                            }
+
+                            mTimeTextView.setText("cost time：" + inferenceTimeCost + "ms");
+                        }
+                    });
+
+                });
             }
-        });
+
+
+        }, UVCCamera.PIXEL_FORMAT_NV21);
+
+
     }
 
 
@@ -500,14 +515,12 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
 
     @Override
     protected void onPause() {
-        mCameraView.onPause();
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        mCameraView.onResume();
     }
 
 
@@ -526,6 +539,9 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
                 }
             }
         });
+
+        camera.close();
+        camera.destroy();
 
         super.onDestroy();
     }

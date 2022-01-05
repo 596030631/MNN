@@ -6,6 +6,7 @@ import android.util.Log;
 import com.taobao.android.utils.Common;
 
 public class MNNNetNative {
+    private static final String TAG = "MNNNetNative";
     // load libraries
     static void loadGpuLibrary(String name) {
         try {
@@ -15,10 +16,12 @@ public class MNNNetNative {
         }
     }
     static {
+        String CPU_ABI = android.os.Build.CPU_ABI;
+        Log.e(TAG,"System ABI:"+CPU_ABI);
         System.loadLibrary("MNN");
-        loadGpuLibrary("MNN_Vulkan");
-        loadGpuLibrary("MNN_OpenCL");
-        loadGpuLibrary("MNN_GL");
+//        loadGpuLibrary("MNN_Vulkan");
+//        loadGpuLibrary("MNN_OpenCL");
+//        loadGpuLibrary("MNN_GL");
         System.loadLibrary("mnncore");
     }
 

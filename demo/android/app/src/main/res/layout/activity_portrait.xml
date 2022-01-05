@@ -13,7 +13,7 @@
         android:textOff="前置"
         android:textOn="后置" />
 
-    <com.taobao.android.utils.PortraitCameraView
+    <SurfaceView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:id="@+id/camera_view" />
