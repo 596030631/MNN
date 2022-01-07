@@ -41,7 +41,6 @@ android {
 
     sourceSets {
         main {
-//            jniLibs.srcDirs = ['libs']
             assets {
                 srcDirs = ["../../model", "../../../resource/model"]
             }
