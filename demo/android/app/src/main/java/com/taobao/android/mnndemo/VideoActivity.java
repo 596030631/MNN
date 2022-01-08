@@ -9,6 +9,8 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
@@ -155,17 +157,16 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         mNetInstance = MNNNetInstance.createFromFile(modelPath);
 
         // mConfig.saveTensors;
-        mSession = mNetInstance.createSession(mConfig);
-
-        // get input tensor
-        mInputTensor = mSession.getInput(null);
-
-        int[] dimensions = mInputTensor.getDimensions();
-        dimensions[0] = 1; // force batch = 1  NCHW  [batch, channels, height, width]
-        mInputTensor.reshape(dimensions);
-        mSession.reshape();
-
-        mLockUIRender.set(false);
+        if (mNetInstance != null) {
+            mSession = mNetInstance.createSession(mConfig);
+            // get input tensor
+            mInputTensor = mSession.getInput(null);
+            int[] dimensions = mInputTensor.getDimensions();
+            dimensions[0] = 1; // force batch = 1  NCHW  [batch, channels, height, width]
+            mInputTensor.reshape(dimensions);
+            mSession.reshape();
+            mLockUIRender.set(false);
+        }
     }
 
     @Override
@@ -219,18 +220,13 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         mThread.start();
         mHandle = new Handler(mThread.getLooper());
 
-        mHandle.post(new Runnable() {
-            @Override
-            public void run() {
-                prepareNet();
-            }
-        });
+        mHandle.post(this::prepareNet);
 
     }
 
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (10 == requestCode) {
@@ -277,154 +273,138 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
                     Log.w(TAG, "drop frame , net running too slow !!");
                 } else {
                     mDrop.set(true);
-                    mHandle.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            mDrop.set(false);
-                            if (mLockUIRender.get()) {
-                                return;
-                            }
-
-                            // calculate corrected angle based on camera orientation and mobile rotate degree. (back camrea)
-                            int needRotateAngle = (angle + mRotateDegree) % 360;
-
-                            /*
-                             *  convert data to input tensor
-                             */
-                            final MNNImageProcess.Config config = new MNNImageProcess.Config();
-                            if (mSelectedModelIndex == 0) {
-                                // normalization params
-                                config.mean = new float[]{103.94f, 116.78f, 123.68f};
-                                config.normal = new float[]{0.017f, 0.017f, 0.017f};
-                                config.source = MNNImageProcess.Format.YUV_NV21;// input source format
-                                config.dest = MNNImageProcess.Format.BGR;// input data format
-
-                                // matrix transform: dst to src
-                                Matrix matrix = new Matrix();
-                                matrix.postScale(MobileInputWidth / (float) imageWidth, MobileInputHeight / (float) imageHeight);
-                                matrix.postRotate(needRotateAngle, MobileInputWidth / 2, MobileInputHeight / 2);
-                                matrix.invert(matrix);
-
-                                MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
-
-                            } else if (mSelectedModelIndex == 1) {
-                                // input data format
-                                config.source = MNNImageProcess.Format.YUV_NV21;// input source format
-                                config.dest = MNNImageProcess.Format.BGR;// input data format
-
-                                // matrix transform: dst to src
-                                final Matrix matrix = new Matrix();
-                                matrix.postScale(SqueezeInputWidth / (float) (float) imageWidth, SqueezeInputHeight / (float) imageHeight);
-                                matrix.postRotate(needRotateAngle, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
-                                matrix.invert(matrix);
-
-                                MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
-                            }
-
-                            final long startTimestamp = System.nanoTime();
-                            /**
-                             * inference
-                             */
-                            mSession.run();
-
-                            /**
-                             * get output tensor
-                             */
-                            MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
-
-                            float[] result = output.getFloatData();// get float results
-                            final long endTimestamp = System.nanoTime();
-                            final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
-
-                            if (result.length > MAX_CLZ_SIZE) {
-                                Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
-                            }
-
-                            final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
-                            for (int i = 0; i < result.length; i++) {
-                                float confidence = result[i];
-                                if (confidence > 0.01) {
-                                    maybes.add(new AbstractMap.SimpleEntry<Integer, Float>(i, confidence));
-                                }
-                            }
-
-                            Collections.sort(maybes, new Comparator<Map.Entry<Integer, Float>>() {
-                                @Override
-                                public int compare(Map.Entry<Integer, Float> o1, Map.Entry<Integer, Float> o2) {
-                                    if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
-                                        return 0;
-                                    }
-                                    return o1.getValue() > o2.getValue() ? -1 : 1;
-                                }
-                            });
-
-                            // show results on ui
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-
-                                    if (maybes.size() == 0) {
-                                        mFirstResult.setText("no data");
-                                        mSecondResult.setText("");
-                                        mThirdResult.setText("");
-                                    }
-                                    if (maybes.size() > 0) {
-                                        mFirstResult.setTextColor(maybes.get(0).getValue() > 0.2 ? Color.BLACK : Color.parseColor("#a4a4a4"));
-                                        final Integer iKey = maybes.get(0).getKey();
-                                        final Float fValue = maybes.get(0).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mFirstResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-
-                                    }
-                                    if (maybes.size() > 1) {
-                                        final Integer iKey = maybes.get(1).getKey();
-                                        final Float fValue = maybes.get(1).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mSecondResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-
-                                    }
-                                    if (maybes.size() > 2) {
-                                        final Integer iKey = maybes.get(2).getKey();
-                                        final Float fValue = maybes.get(2).getValue();
-                                        String strWord = "unknown";
-                                        if (0 == mSelectedModelIndex) {
-                                            if (iKey < mMobileTaiWords.size()) {
-                                                strWord = mMobileTaiWords.get(iKey);
-                                            }
-                                        } else {
-                                            if (iKey < mSqueezeTaiWords.size()) {
-                                                strWord = mSqueezeTaiWords.get(iKey);
-                                            }
-                                        }
-                                        final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
-                                        mThirdResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
-                                    }
-
-                                    mTimeTextView.setText("cost time：" + inferenceTimeCost + "ms");
-                                }
-                            });
-
+                    mHandle.post(() -> {
+                        mDrop.set(false);
+                        if (mLockUIRender.get()) {
+                            return;
                         }
+
+                        // calculate corrected angle based on camera orientation and mobile rotate degree. (back camrea)
+                        int needRotateAngle = (angle + mRotateDegree) % 360;
+
+                        /*
+                         *  convert data to input tensor
+                         */
+                        final MNNImageProcess.Config config = new MNNImageProcess.Config();
+                        if (mSelectedModelIndex == 0) {
+                            // normalization params
+                            config.mean = new float[]{103.94f, 116.78f, 123.68f};
+                            config.normal = new float[]{0.017f, 0.017f, 0.017f};
+                            config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                            config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                            // matrix transform: dst to src
+                            Matrix matrix = new Matrix();
+                            matrix.postScale(MobileInputWidth / (float) imageWidth, MobileInputHeight / (float) imageHeight);
+                            matrix.postRotate(needRotateAngle, MobileInputWidth / 2, MobileInputHeight / 2);
+                            matrix.invert(matrix);
+
+                            MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
+
+                        } else if (mSelectedModelIndex == 1) {
+                            // input data format
+                            config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                            config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                            // matrix transform: dst to src
+                            final Matrix matrix = new Matrix();
+                            matrix.postScale(SqueezeInputWidth / (float) (float) imageWidth, SqueezeInputHeight / (float) imageHeight);
+                            matrix.postRotate(needRotateAngle, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
+                            matrix.invert(matrix);
+
+                            MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
+                        }
+
+                        final long startTimestamp = System.nanoTime();
+                        mSession.run();
+
+                        MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
+
+                        float[] result = output.getFloatData();// get float results
+                        final long endTimestamp = System.nanoTime();
+                        final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
+
+                        if (result.length > MAX_CLZ_SIZE) {
+                            Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
+                        }
+
+                        final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
+                        for (int i = 0; i < result.length; i++) {
+                            float confidence = result[i];
+                            if (confidence > 0.01) {
+                                maybes.add(new AbstractMap.SimpleEntry<>(i, confidence));
+                            }
+                        }
+
+                        Collections.sort(maybes, (o1, o2) -> {
+                            if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
+                                return 0;
+                            }
+                            return o1.getValue() > o2.getValue() ? -1 : 1;
+                        });
+
+                        // show results on ui
+                        runOnUiThread(() -> {
+
+                            if (maybes.size() == 0) {
+                                mFirstResult.setText("no data");
+                                mSecondResult.setText("");
+                                mThirdResult.setText("");
+                            }
+                            if (maybes.size() > 0) {
+                                mFirstResult.setTextColor(maybes.get(0).getValue() > 0.2 ? Color.BLACK : Color.parseColor("#a4a4a4"));
+                                final Integer iKey = maybes.get(0).getKey();
+                                final Float fValue = maybes.get(0).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mFirstResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+                            }
+                            if (maybes.size() > 1) {
+                                final Integer iKey = maybes.get(1).getKey();
+                                final Float fValue = maybes.get(1).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mSecondResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+                            }
+                            if (maybes.size() > 2) {
+                                final Integer iKey = maybes.get(2).getKey();
+                                final Float fValue = maybes.get(2).getValue();
+                                String strWord = "unknown";
+                                if (0 == mSelectedModelIndex) {
+                                    if (iKey < mMobileTaiWords.size()) {
+                                        strWord = mMobileTaiWords.get(iKey);
+                                    }
+                                } else {
+                                    if (iKey < mSqueezeTaiWords.size()) {
+                                        strWord = mSqueezeTaiWords.get(iKey);
+                                    }
+                                }
+                                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                                mThirdResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+                            }
+
+                            mTimeTextView.setText("cost time：" + inferenceTimeCost + "ms");
+                        });
                     });
                 }
             }
