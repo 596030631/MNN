@@ -78,8 +78,8 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
     HandlerThread mThread;
     Handler mHandle;
 
-    private AtomicBoolean mLockUIRender = new AtomicBoolean(false);
-    private AtomicBoolean mDrop = new AtomicBoolean(false);
+    private final AtomicBoolean mLockUIRender = new AtomicBoolean(false);
+    private final AtomicBoolean mDrop = new AtomicBoolean(false);
 
     private MNNNetInstance mNetInstance;
     private MNNNetInstance.Session mSession;
