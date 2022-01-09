@@ -2,7 +2,8 @@
 // Created by sjh on 2021/12/28.
 //
 
-#ifndef FFMPEG_ANDROID_RTSPCLIENT_H
+#ifndef FFMPEG_ANDROID_RTSP_H
+#define INBUF_SIZE 4096
 
 #include "ALog.h"
 
@@ -13,7 +14,7 @@ extern "C" {
 #include <libavutil/timestamp.h>
 }
 
-#define FFMPEG_ANDROID_RTSPCLIENT_H
+#define FFMPEG_ANDROID_RTSP_H
 
 
 class Rtsp {
@@ -42,4 +43,4 @@ public:
 };
 
 
-#endif //FFMPEG_ANDROID_RTSPCLIENT_H
+#endif //FFMPEG_ANDROID_RTSP_H

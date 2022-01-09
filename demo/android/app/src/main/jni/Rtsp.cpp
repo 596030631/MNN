@@ -130,6 +130,9 @@ bool Rtsp::play(const char *rtspUrl, const char *out_filename) {
         goto end;
     }
 
+    AVFrame *frame;
+    frame = av_frame_alloc();
+
     while (recording) {
         AVStream *in_stream, *out_stream;
 
@@ -159,7 +162,12 @@ bool Rtsp::play(const char *rtspUrl, const char *out_filename) {
         pkt.pos = -1;
         log_packet(ofmt_ctx, &pkt, "out");
 
+        LOGW("pkt:%d", pkt.size);
+
         ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+
+        LOGE("%s",out_filename);
+
         if (ret < 0) {
             LOGD("Error muxing packet\n");
             break;
@@ -187,6 +195,7 @@ bool Rtsp::play(const char *rtspUrl, const char *out_filename) {
 
     return true;
 }
+
 
 void Rtsp::stop() {
     recording = false;

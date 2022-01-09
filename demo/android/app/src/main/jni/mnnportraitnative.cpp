@@ -8,7 +8,7 @@
 
 #include <android/bitmap.h>
 #include <jni.h>
-#include <string.h>
+#include <cstring>
 #include <MNN/ImageProcess.hpp>
 #include <MNN/Interpreter.hpp>
 #include <MNN/Tensor.hpp>
