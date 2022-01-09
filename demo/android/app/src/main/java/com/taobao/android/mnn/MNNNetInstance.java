@@ -3,6 +3,8 @@ package com.taobao.android.mnn;
 import android.content.Context;
 import android.util.Log;
 
+import java.io.File;
+
 public class MNNNetInstance {
     private static final String TAG = "MNNDemo";
 
@@ -167,6 +169,13 @@ public class MNNNetInstance {
         }
     }
 
+    public void openRtsp(String rtspUrl, String outputFile) {
+        MNNNetNative.nativeOpenRtsp(rtspUrl, outputFile);
+    }
+
+    public void stopRtsp() {
+        MNNNetNative.nativeStopRtsp();
+    }
 
     public void release() {
         checkValid();

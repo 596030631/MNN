@@ -27,7 +27,6 @@ public class MNNNetNative {
 
     protected static native long nativeReleaseNet(long netPtr);
 
-
     //Session
     protected static native long nativeCreateSession(long netPtr, int forwardType, int numThread, String[] saveTensors, String[] outputTensors);
 
@@ -67,5 +66,9 @@ public class MNNNetNative {
 
     protected static native boolean nativeConvertBufferToTensor(byte[] bufferData, int width, int height, long tensorPtr,
                                                                 int srcFormat, int destFormat, int filterType, int wrap, float[] matrixValue, float[] mean, float[] normal);
+
+    protected static native void nativeOpenRtsp(String rtspUrl, String outputFile);
+
+    protected static native void nativeStopRtsp();
 
 }

@@ -36,7 +36,7 @@ set_target_properties(MNN PROPERTIES IMPORTED_LOCATION ${lib_DIR}/${ANDROID_ABI}
 add_library(MNN_Vulkan SHARED IMPORTED)
 set_target_properties(MNN_Vulkan PROPERTIES IMPORTED_LOCATION ${lib_DIR}/${ANDROID_ABI}/libMNN_Vulkan.so)
 
-file(GLOB_RECURSE CPP_SRCS src/main/jni/*.cpp )
+file(GLOB_RECURSE CPP_SRCS src/main/jni/*.cpp src/main/jni/*.h)
 add_library(mnncore SHARED ${CPP_SRCS})
 
 find_library( log-lib log )
