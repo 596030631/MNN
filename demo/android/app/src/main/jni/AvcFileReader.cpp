@@ -12,10 +12,12 @@ void AvcFileReader::pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
     FILE *f;
     int i;
 
+    LOGW("%s", filename);
     f = fopen(filename, "w");
-    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
-    for (i = 0; i < ysize; i++)
+    LOGD("P5 %d %d %d", xsize, ysize, 255);
+    for (i = 0; i < ysize; i++) {
         fwrite(buf + i * wrap, 1, xsize, f);
+    }
     fclose(f);
 }
 
@@ -23,23 +25,26 @@ void AvcFileReader::decode(AVCodecContext *dec_ctx, AVFrame *frame, AVPacket *pk
                            const char *filename) {
     char buf[1024];
     int ret;
-
+    LOGW("............");
     ret = avcodec_send_packet(dec_ctx, pkt);
     if (ret < 0) {
-        fprintf(stderr, "Error sending a packet for decoding\n");
-        exit(1);
+        LOGE("Error sending a packet for decoding");
+        return;
     }
 
     while (ret >= 0) {
         ret = avcodec_receive_frame(dec_ctx, frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            LOGW("avcodec_receive_frame error %d", ret);
             return;
-        else if (ret < 0) {
-            fprintf(stderr, "Error during decoding\n");
-            exit(1);
         }
 
-        printf("saving frame %3d\n", dec_ctx->frame_number);
+        else if (ret < 0) {
+            LOGE("Error during decoding\n");
+            return;
+        }
+
+        LOGE("saving frame %3d", dec_ctx->frame_number);
         fflush(stdout);
 
         /* the picture is allocated by the decoder. no need to
@@ -117,27 +122,38 @@ bool AvcFileReader::start_decode(const char *filename, const char *outfilename) 
     while (!feof(f)) {
         /* read raw data from the input file */
         data_size = fread(inbuf, 1, INBUF_SIZE, f);
-        if (!data_size)
+        LOGE("IIIIIIII:%d", data_size);
+        if (!data_size) {
+            LOGE("IIIIIIII BREAK :%d", data_size);
             break;
+        }
 
         /* use the parser to split the data into frames */
         data = inbuf;
         while (data_size > 0) {
             ret = av_parser_parse2(parser, c, &pkt->data, &pkt->size,
                                    data, data_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+            LOGE("Result :%d", ret);
+
             if (ret < 0) {
                 LOGE("Error while parsing");
                 return false;
             }
             data += ret;
             data_size -= ret;
+
+            LOGW("SSSSSSSSSSSSSSSSSSSS：%d", pkt->size);
+
             if (pkt->size) {
+                LOGW("Decode Frame");
                 decode(c, frame, pkt, outfilename);
             }
         }
     }
 
     /* flush the decoder */
+    LOGW("Decode Frame End");
+
     decode(c, frame, nullptr, outfilename);
 
     fclose(f);

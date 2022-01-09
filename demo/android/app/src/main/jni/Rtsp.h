@@ -6,7 +6,7 @@
 #define INBUF_SIZE 4096
 
 #include "ALog.h"
-
+#include "AvcFileReader.h"
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -27,7 +27,8 @@ private:
 
 public:
     bool play(const char *rtspUrl, const char *string);
-
+    bool playImage(const char *rtspUrl, const char *string);
+    int save_jpeg(AVFrame *pFrame, char *out_name);
     void stop();
 
     static Rtsp &getInstance() {

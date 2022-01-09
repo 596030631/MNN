@@ -470,6 +470,15 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtsp(JNIEnv *env, jclass type
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtspImage(JNIEnv *env, jclass type, jstring rtspUrl, jstring outFilePath) {
+    const char *c_rtspUrl = env->GetStringUTFChars(rtspUrl, JNI_FALSE);
+    const char *c_pathName = env->GetStringUTFChars(outFilePath, JNI_FALSE);
+    Rtsp::getInstance().playImage(c_rtspUrl, c_pathName);
+    env->ReleaseStringUTFChars(rtspUrl, c_rtspUrl);
+    env->ReleaseStringUTFChars(rtspUrl, c_pathName);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_taobao_android_mnn_MNNNetNative_nativeStopRtsp(JNIEnv *env, jclass type) {
     Rtsp::getInstance().stop();
 }

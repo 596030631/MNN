@@ -68,6 +68,7 @@ public class MNNNetNative {
                                                                 int srcFormat, int destFormat, int filterType, int wrap, float[] matrixValue, float[] mean, float[] normal);
 
     protected static native void nativeOpenRtsp(String rtspUrl, String outputFile);
+    protected static native void nativeOpenRtspImage(String rtspUrl, String outputFile);
 
     protected static native void nativeStopRtsp();
 

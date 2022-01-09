@@ -173,6 +173,10 @@ public class MNNNetInstance {
         MNNNetNative.nativeOpenRtsp(rtspUrl, outputFile);
     }
 
+    public void openRtspImage(String rtspUrl, String outputFile) {
+        MNNNetNative.nativeOpenRtspImage(rtspUrl, outputFile);
+    }
+
     public void stopRtsp() {
         MNNNetNative.nativeStopRtsp();
     }

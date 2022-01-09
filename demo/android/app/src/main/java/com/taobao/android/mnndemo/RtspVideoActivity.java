@@ -74,35 +74,6 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
     private MNNNetInstance.Session mSession;
     private MNNNetInstance.Session.Tensor mInputTensor;
 
-    private int mRotateDegree;// 0/90/180/360
-
-    /**
-     * 监听屏幕旋转
-     */
-    void detectScreenRotate() {
-        OrientationEventListener orientationListener = new OrientationEventListener(this,
-                SensorManager.SENSOR_DELAY_NORMAL) {
-            @Override
-            public void onOrientationChanged(int orientation) {
-
-                if (orientation == OrientationEventListener.ORIENTATION_UNKNOWN) {
-                    return;  //手机平放时，检测不到有效的角度
-                }
-
-                //可以根据不同角度检测处理，这里只检测四个角度的改变
-                orientation = (orientation + 45) / 90 * 90;
-                mRotateDegree = orientation % 360;
-            }
-        };
-
-
-        if (orientationListener.canDetectOrientation()) {
-            orientationListener.enable();
-        } else {
-            orientationListener.disable();
-        }
-    }
-
     private void prepareModels() {
 
         mMobileModelPath = getCacheDir() + "mobilenet_v1.caffe.mnn";
@@ -164,8 +135,6 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_rtsp_main);
 
-        detectScreenRotate();
-
         mSelectedModelIndex = 0;
         mConfig.numThread = 4;
         mConfig.forwardType = MNNForwardType.FORWARD_CPU.type;
@@ -175,9 +144,9 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
         mForwardTypeSpinner = (Spinner) findViewById(R.id.forwardTypeSpinner);
         findViewById(R.id.btn_start).setOnClickListener(v -> {
-            new Thread(() -> mNetInstance.openRtsp(
-//                    "rtsp://admin:123456@192.168.31.46:3389/cam/realmonitor?channel=1&subtype=1"
-                    "rtsp://admin:123456@58.56.152.66:8073/cam/realmonitor?channel=1&subtype=1"
+            new Thread(() -> mNetInstance.openRtspImage(
+                    "rtsp://admin:123456@192.168.31.46:3389/cam/realmonitor?channel=1&subtype=1"
+//                    "rtsp://admin:123456@58.56.152.66:8073/cam/realmonitor?channel=1&subtype=1"
                     , new File(getExternalCacheDir(),System.currentTimeMillis() + ".mp4").getAbsolutePath())).start();
 
         });

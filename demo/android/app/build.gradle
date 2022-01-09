@@ -11,7 +11,7 @@ android {
     }
     compileSdkVersion 30
     defaultConfig {
-        applicationId "com.taobao.mnndemo"
+        applicationId "com.taobao.android.mnndemo"
         minSdkVersion 14
         targetSdkVersion 30
         versionCode 1
