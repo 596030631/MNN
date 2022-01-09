@@ -6,35 +6,29 @@ RtspClient::~RtspClient() = default;
 
 bool RtspClient::play(const char *rtspUrl, const char *pathName) {
     recording = true;
-
-//    SwsContext *img_convert_ctx;
     AVFormatContext *context = avformat_alloc_context();
-    AVCodecContext *pContext = avcodec_alloc_context3(NULL);
+    AVCodecContext *pContext = avcodec_alloc_context3(nullptr);
     int video_stream_index = -1;
-
-//    av_register_all();
-
     avformat_network_init();
-
-    AVDictionary *option = NULL;
+    AVDictionary *option = nullptr;
     av_dict_set(&option, "rtsp_transport", "tcp", 0);
 
     // Open RTSP
-    if (int err = avformat_open_input(&context, rtspUrl, NULL, &option) != 0) {
+    if (int err = avformat_open_input(&context, rtspUrl, nullptr, &option) != 0) {
         LOGE("Cannot open input %s, error code: %d", rtspUrl, err);
         return false;
     }
 
     av_dict_free(&option);
 
-    if (avformat_find_stream_info(context, NULL) < 0) {
+    if (avformat_find_stream_info(context, nullptr) < 0) {
         LOGE("Cannot find stream info");
         return false;
     }
 
     // Search video stream
     for (int i = 0; i < context->nb_streams; i++) {
-        if (context->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+        if (context->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
             video_stream_index = i;
     }
 
@@ -48,12 +42,12 @@ bool RtspClient::play(const char *rtspUrl, const char *pathName) {
 
     // Open output file
     AVFormatContext *oc = avformat_alloc_context();
-    AVStream *stream = NULL;
+    AVStream *stream = nullptr;
 
     // Start reading packets from stream and write them to file
     av_read_play(context);
 
-    AVCodec *codec = NULL;
+    AVCodec *codec = nullptr;
     codec = avcodec_find_decoder(AV_CODEC_ID_H264);
     if (!codec) {
         LOGE("Cannot find decoder H264");

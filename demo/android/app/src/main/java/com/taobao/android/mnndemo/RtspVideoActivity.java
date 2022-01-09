@@ -175,7 +175,9 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
         mForwardTypeSpinner = (Spinner) findViewById(R.id.forwardTypeSpinner);
         findViewById(R.id.btn_start).setOnClickListener(v -> {
-            new Thread(() -> mNetInstance.openRtsp("rtsp://admin:123456@192.168.31.46:3389/cam/realmonitor?channel=1&subtype=1"
+            new Thread(() -> mNetInstance.openRtsp(
+//                    "rtsp://admin:123456@192.168.31.46:3389/cam/realmonitor?channel=1&subtype=1"
+                    "rtsp://admin:123456@58.56.152.66:8073/cam/realmonitor?channel=1&subtype=1"
                     , new File(getExternalCacheDir(),System.currentTimeMillis() + ".mp4").getAbsolutePath())).start();
 
         });

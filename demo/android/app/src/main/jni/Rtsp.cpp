@@ -18,12 +18,10 @@ void Rtsp::log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const
 
 bool Rtsp::play(const char *rtspUrl, const char *out_filename) {
     recording = true;
-//    auto f = fopen(pathName, "wb+");
-//    fwrite(packet.data, 1, packet.size, f);
     int ret, i;
     int stream_index = 0;
     int *stream_mapping = nullptr;
-    int stream_mapping_size = 0;
+    int stream_mapping_size;
     AVPacket pkt;
     AVFormatContext *ifmt_ctx = nullptr;
     AVFormatContext *ofmt_ctx = nullptr;
