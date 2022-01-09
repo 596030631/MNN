@@ -3,7 +3,7 @@ apply plugin: 'com.android.application'
 android {
     signingConfigs {
         debug {
-            storeFile file('D:\\android\\workspace\\EasyTouch.jks')
+            storeFile file('..\\..\\..\\..\\EasyTouch.jks')
             keyAlias 'etkey'
             storePassword '86105970'
             keyPassword '86105970'
@@ -11,7 +11,7 @@ android {
     }
     compileSdkVersion 30
     defaultConfig {
-        applicationId "com.taobao.android.mnndemo"
+        applicationId "com.taobao.mnndemo"
         minSdkVersion 14
         targetSdkVersion 30
         versionCode 1

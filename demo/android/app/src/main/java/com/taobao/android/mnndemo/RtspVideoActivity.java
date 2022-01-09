@@ -239,8 +239,6 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
     private void handlePreViewCallBack() {
 
-        ViewStub stub = (ViewStub) findViewById(R.id.stub);
-        stub.inflate();
 
 
 //        mCameraView.setPreviewCallback(new CameraView.PreviewCallback() {

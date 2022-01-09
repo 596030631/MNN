@@ -3,14 +3,6 @@
     android:layout_width="fill_parent"
     android:layout_height="fill_parent">
 
-
-    <ViewStub
-        android:id="@+id/stub"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_alignParentTop="true"
-        android:layout="@layout/activity_video" />
-
     <LinearLayout
         android:id="@+id/toolBar"
         android:layout_width="match_parent"
