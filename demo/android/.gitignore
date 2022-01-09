@@ -1,12 +1,4 @@
 .gradle
 /local.properties
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-.DS_Store
+/.idea/*
 /build
-/captures
-.externalNativeBuild
-/app/build
-/app/.cxx/cmake/debug/armeabi-v7a/.ninja_deps
-/app/.cxx/
