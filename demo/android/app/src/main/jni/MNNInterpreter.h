@@ -16,6 +16,7 @@ private:
     MNN::Interpreter *interpreter;
     MNN::Session *session;
     MNN::Tensor *inputTensor;
+    MNN::Tensor *outputTensor;
     bool sessionRunning;
 
     MNNInterpreter();

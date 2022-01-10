@@ -473,8 +473,6 @@ bool Rtsp::swsScale(const char *rtspUrl, const char *out_filename) {
 
     dec_context = avcodec_alloc_context3(dec_codec);
 
-    LOGE("codec channels:%d", dec_context->channels);
-
     ret_av = avcodec_parameters_to_context(dec_context, ifmt_ctx->streams[video_index]->codecpar);
 
     if (ret_av < 0) {
@@ -538,10 +536,7 @@ bool Rtsp::swsScale(const char *rtspUrl, const char *out_filename) {
         LOGE("Could not allocate destination image");
         goto end;
     }
-//    dst_bufsize = ret;
 
-
-    frame_count = 0;
     /* read all packets */
     while (recording) {
         if (av_read_frame(ifmt_ctx, &dec_pkt) < 0) break;
@@ -580,24 +575,28 @@ bool Rtsp::swsScale(const char *rtspUrl, const char *out_filename) {
                     std::shared_ptr<MNN::CV::ImageProcess> pretreat(
                             MNN::CV::ImageProcess::create(config));
                     MNN::Tensor *input = MNNInterpreter::getInstance().getSessionInput(nullptr);
-                    LOGD("1");
                     if (input) {
-                        auto dims = input->shape();
-                        int size_h = dims[2];
-                        int size_w = dims[3];
-                        MNN::CV::Matrix trans;
-                        //Dst -> [0, 1]
-                        trans.postScale(1.0 / size_w, 1.0 / size_h);
-                        //Flip Y  （因为 FreeImage 解出来的图像排列是Y方向相反的）
-                        trans.postScale(1.0, -1.0, 0.0, 0.5);
-                        //[0, 1] -> Src
-                        trans.postScale(dec_frame->width, dec_frame->height);
-                        pretreat->setMatrix(trans);
-                        LOGD("2");
-                        pretreat->convert(dec_frame->data[0], input->width(), input->height(), 0,
-                                          input);
+//                        auto dims = input->shape();
+//                        int size_h = dims[2];
+//                        int size_w = dims[3];
+//                        MNN::CV::Matrix trans;
+//                        //Dst -> [0, 1]
+//                        trans.postScale(1.0 / size_w, 1.0 / size_h);
+//                        //Flip Y  （因为 FreeImage 解出来的图像排列是Y方向相反的）
+//                        trans.postScale(1.0, -1.0, 0.0, 0.5);
+//                        //[0, 1] -> Src
+//                        trans.postScale(dec_frame->width, dec_frame->height);
+//                        pretreat->setMatrix(trans);
+//                        pretreat->convert(dec_frame->data[0], input->width(), input->height(), 0,
+//                                          input);
 
-                        LOGD("Image Process");
+
+                        LOGD("ZZ");
+                        for (int i = 0; i < input->width() * input->height(); ++i) {
+                            input->host<int>()[i] = 11;
+                        }
+                        LOGD("CC");
+
                         MNNInterpreter::getInstance().testRunSession();
                     } else {
                         LOGD("输入未就绪");
@@ -622,7 +621,7 @@ bool Rtsp::swsScale(const char *rtspUrl, const char *out_filename) {
 //                }
                 av_frame_unref(dec_frame);
 //                av_usleep(10 * 1000L);
-                LOGD("---------------");
+                LOGD("****************************************");
             }
         }
         av_packet_unref(&dec_pkt);
