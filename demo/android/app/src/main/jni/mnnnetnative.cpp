@@ -10,24 +10,23 @@
 #include <jni.h>
 #include <cstring>
 #include <MNN/ImageProcess.hpp>
-#include <MNN/Interpreter.hpp>
+//#include <MNN/Interpreter.hpp>
 #include <MNN/Tensor.hpp>
 #include <memory>
 #include "Rtsp.h"
+#include "MNNInterpreter.h"
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_taobao_android_mnn_MNNNetNative_nativeCreateNetFromFile(JNIEnv *env, jclass type,
                                                                  jstring modelName_) {
-    const char *modelName = env->GetStringUTFChars(modelName_, 0);
-    auto interpreter = MNN::Interpreter::createFromFile(modelName);
+    const char *modelName = env->GetStringUTFChars(modelName_, JNI_FALSE);
+    auto interpreter = MNNInterpreter::getInstance().loadModelFromFile(modelName);
     env->ReleaseStringUTFChars(modelName_, modelName);
-
     return (jlong) interpreter;
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_taobao_android_mnn_MNNNetNative_nativeReleaseNet(JNIEnv *env, jclass type,
-                                                          jlong netPtr) {
+Java_com_taobao_android_mnn_MNNNetNative_nativeReleaseNet(JNIEnv *env, jclass type, jlong netPtr) {
     if (0 == netPtr) {
         return 0;
     }
@@ -44,39 +43,31 @@ extern "C" JNIEXPORT jlong JNICALL Java_com_taobao_android_mnn_MNNNetNative_nati
     if (numThread > 0) {
         config.numThread = numThread;
     }
-
-    if (jsaveTensors != NULL) {
+    if (jsaveTensors != nullptr) {
         int size = env->GetArrayLength(jsaveTensors);
         std::vector<std::string> saveNamesVector;
-
         for (int i = 0; i < size; i++) {
-            jstring jname = (jstring) env->GetObjectArrayElement(jsaveTensors, i);
-            const char *name = env->GetStringUTFChars(jname, NULL);
+            auto jname = (jstring) env->GetObjectArrayElement(jsaveTensors, i);
+            const char *name = env->GetStringUTFChars(jname, JNI_FALSE);
             std::string nameStr = name;
             saveNamesVector.push_back(nameStr);
-
             env->ReleaseStringUTFChars(jname, name);
         }
         config.saveTensors = saveNamesVector;
     }
-
-    if (joutputTensors != NULL) {
+    if (joutputTensors != nullptr) {
         int size = env->GetArrayLength(joutputTensors);
         std::vector<std::string> saveNamesVector;
-
         for (int i = 0; i < size; i++) {
-            jstring jname = (jstring) env->GetObjectArrayElement(joutputTensors, i);
-            const char *name = env->GetStringUTFChars(jname, NULL);
+            auto jname = (jstring) env->GetObjectArrayElement(joutputTensors, i);
+            const char *name = env->GetStringUTFChars(jname, JNI_FALSE);
             std::string nameStr = name;
             saveNamesVector.push_back(nameStr);
-
             env->ReleaseStringUTFChars(jname, name);
         }
-
         config.path.outputs = saveNamesVector;
     }
-
-    auto session = ((MNN::Interpreter *) netPtr)->createSession(config);
+    auto session = MNNInterpreter::getInstance().createSession(config);
     return (jlong) session;
 }
 
@@ -114,8 +105,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeRunSessionWithCallback(
     std::vector<std::string> nameVector;
 
     for (int i = 0; i < nameSize; i++) {
-        jstring jname = (jstring) env->GetObjectArrayElement(nameArray, i);
-        const char *name = env->GetStringUTFChars(jname, NULL);
+        auto jname = (jstring) env->GetObjectArrayElement(nameArray, i);
+        const char *name = env->GetStringUTFChars(jname, JNI_FALSE);
         std::string nameStr = name;
         nameVector.push_back(nameStr);
 
@@ -167,28 +158,26 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeReshapeSession(JNIEnv *env,
 
 extern "C" JNIEXPORT jlong JNICALL Java_com_taobao_android_mnn_MNNNetNative_nativeGetSessionInput(
         JNIEnv *env, jclass type, jlong netPtr, jlong sessionPtr, jstring name_) {
-    auto net = (MNN::Interpreter *) netPtr;
-    auto session = (MNN::Session *) sessionPtr;
+//    auto net = (MNN::Interpreter *) netPtr;
+//    auto session = (MNN::Session *) sessionPtr;
     if (nullptr == name_) {
-        return (jlong) net->getSessionInput(session, nullptr);
+        return (jlong) MNNInterpreter::getInstance().getSessionInput(nullptr);
     }
-
-    const char *name = env->GetStringUTFChars(name_, 0);
-    auto tensor = net->getSessionInput(session, name);
-
+    const char *name = env->GetStringUTFChars(name_, JNI_FALSE);
+    auto tensor = (jlong) MNNInterpreter::getInstance().getSessionInput(name);
     env->ReleaseStringUTFChars(name_, name);
     return (jlong) tensor;
 }
 
 extern "C" JNIEXPORT jlong JNICALL Java_com_taobao_android_mnn_MNNNetNative_nativeGetSessionOutput(
         JNIEnv *env, jclass type, jlong netPtr, jlong sessionPtr, jstring name_) {
-    auto net = (MNN::Interpreter *) netPtr;
-    auto session = (MNN::Session *) sessionPtr;
+//    auto net = (MNN::Interpreter *) netPtr;
+//    auto session = (MNN::Session *) sessionPtr;
     if (nullptr == name_) {
-        return (jlong) net->getSessionOutput(session, nullptr);
+        return (jlong) MNNInterpreter::getInstance().getSessionOutput(nullptr);
     }
-    const char *name = env->GetStringUTFChars(name_, 0);
-    auto tensor = net->getSessionOutput(session, name);
+    const char *name = env->GetStringUTFChars(name_, JNI_FALSE);
+    auto tensor = MNNInterpreter::getInstance().getSessionOutput(name);
     env->ReleaseStringUTFChars(name_, name);
     return (jlong) tensor;
 }
@@ -198,7 +187,7 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeReshapeTensor(JNIEnv *env, jclass
                                                              jlong netPtr,
                                                              jlong tensorPtr,
                                                              jintArray dims_) {
-    jint *dims = env->GetIntArrayElements(dims_, NULL);
+    jint *dims = env->GetIntArrayElements(dims_, JNI_FALSE);
     auto dimSize = env->GetArrayLength(dims_);
     std::vector<int> dimVector(dimSize);
     for (int i = 0; i < dimSize; ++i) {
@@ -206,7 +195,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeReshapeTensor(JNIEnv *env, jclass
     }
     auto net = (MNN::Interpreter *) netPtr;
     auto tensor = (MNN::Tensor *) tensorPtr;
-    net->resizeTensor(tensor, dimVector);
+
+    MNNInterpreter::getInstance().resizeSession(tensor, dimVector);
     env->ReleaseIntArrayElements(dims_, dims, 0);
 }
 
@@ -214,7 +204,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_taobao_android_mnn_MNNNetNative_nativ
         JNIEnv *env, jclass type, jlong netPtr, jlong tensorPtr, jintArray data_) {
     auto tensor = (MNN::Tensor *) tensorPtr;
 
-    jint *data = env->GetIntArrayElements(data_, NULL);
+    jint *data = env->GetIntArrayElements(data_, JNI_FALSE);
     auto dataSize = env->GetArrayLength(data_);
 
     for (int i = 0; i < dataSize; ++i) {
@@ -246,7 +236,7 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeTensorGetDimensions(JNIEnv *env, 
 
     jintArray result = env->NewIntArray(dimensions);
 
-    jint *destDims = env->GetIntArrayElements(result, NULL);
+    jint *destDims = env->GetIntArrayElements(result, JNI_FALSE);
     for (int i = 0; i < dimensions; ++i) {
         destDims[i] = tensor->length(i);
     }
@@ -352,8 +342,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeConvertBufferToTensor(
         jlong tensorPtr, jint srcType,
         jint destFormat, jint filterType, jint wrap, jfloatArray matrixValue_, jfloatArray mean_,
         jfloatArray normal_) {
-    jbyte *bufferData = env->GetByteArrayElements(jbufferData, NULL);
-    if (bufferData == NULL) {
+    jbyte *bufferData = env->GetByteArrayElements(jbufferData, JNI_FALSE);
+    if (bufferData == nullptr) {
         MNN_ERROR("Error Buffer Null!\n");
         return JNI_FALSE;
     }
@@ -372,8 +362,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeConvertBufferToTensor(
     config.sourceFormat = (MNN::CV::ImageFormat) srcType;
 
     // mean、normal
-    jfloat *mean = env->GetFloatArrayElements(mean_, NULL);
-    jfloat *normal = env->GetFloatArrayElements(normal_, NULL);
+    jfloat *mean = env->GetFloatArrayElements(mean_, JNI_FALSE);
+    jfloat *normal = env->GetFloatArrayElements(normal_, JNI_FALSE);
     ::memcpy(config.mean, mean, 3 * sizeof(float));
     ::memcpy(config.normal, normal, 3 * sizeof(float));
     // filterType、wrap
@@ -394,6 +384,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeConvertBufferToTensor(
     auto tensor = (MNN::Tensor *) tensorPtr;
 
     process->convert((const unsigned char *) bufferData, jwidth, jheight, 0, tensor);
+//    MNNInterpreter::getInstance().convert(bufferData, jwidth, jheight, 0, tensor);
+
     env->ReleaseByteArrayElements(jbufferData, bufferData, 0);
 
     return JNI_TRUE;
@@ -461,7 +453,8 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeConvertBitmapToTensor(
 
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtsp(JNIEnv *env, jclass type, jstring rtspUrl, jstring outFilePath) {
+Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtsp(JNIEnv *env, jclass type, jstring rtspUrl,
+                                                        jstring outFilePath) {
     const char *c_rtspUrl = env->GetStringUTFChars(rtspUrl, JNI_FALSE);
     const char *c_pathName = env->GetStringUTFChars(outFilePath, JNI_FALSE);
     Rtsp::getInstance().play(c_rtspUrl, c_pathName);
@@ -470,10 +463,21 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtsp(JNIEnv *env, jclass type
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtspImage(JNIEnv *env, jclass type, jstring rtspUrl, jstring outFilePath) {
+Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtspImage(JNIEnv *env, jclass type,
+                                                             jstring rtspUrl, jstring outFilePath) {
     const char *c_rtspUrl = env->GetStringUTFChars(rtspUrl, JNI_FALSE);
     const char *c_pathName = env->GetStringUTFChars(outFilePath, JNI_FALSE);
     Rtsp::getInstance().playImage(c_rtspUrl, c_pathName);
+    env->ReleaseStringUTFChars(rtspUrl, c_rtspUrl);
+    env->ReleaseStringUTFChars(rtspUrl, c_pathName);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_taobao_android_mnn_MNNNetNative_nativeOpenRtspSwsScale(JNIEnv *env, jclass type,
+                                                             jstring rtspUrl, jstring outFilePath) {
+    const char *c_rtspUrl = env->GetStringUTFChars(rtspUrl, JNI_FALSE);
+    const char *c_pathName = env->GetStringUTFChars(outFilePath, JNI_FALSE);
+    Rtsp::getInstance().swsScale(c_rtspUrl, c_pathName);
     env->ReleaseStringUTFChars(rtspUrl, c_rtspUrl);
     env->ReleaseStringUTFChars(rtspUrl, c_pathName);
 }

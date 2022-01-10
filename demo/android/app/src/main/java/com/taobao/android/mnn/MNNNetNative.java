@@ -69,6 +69,7 @@ public class MNNNetNative {
 
     protected static native void nativeOpenRtsp(String rtspUrl, String outputFile);
     protected static native void nativeOpenRtspImage(String rtspUrl, String outputFile);
+    protected static native void nativeOpenRtspSwsScale(String rtspUrl, String outputFile);
 
     protected static native void nativeStopRtsp();
 

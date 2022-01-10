@@ -12,7 +12,11 @@ extern "C" {
 #include "libavcodec/avcodec.h"
 #include "libswscale/swscale.h"
 #include <libavutil/timestamp.h>
+#include <libavutil/imgutils.h>
+#include <libavfilter/buffersrc.h>
+#include <libavutil/time.h>
 }
+#include "MNNInterpreter.h"
 
 #define FFMPEG_ANDROID_RTSP_H
 
@@ -28,9 +32,12 @@ private:
 public:
     bool play(const char *rtspUrl, const char *string);
     bool playImage(const char *rtspUrl, const char *string);
-    int save_jpeg(AVFrame *pFrame, char *out_name);
-    void stop();
+    bool swsScale(const char *rtspUrl, const char *string);
+    static int save_jpeg(AVFrame *pFrame, char *out_name);
+    static void fill_yuv_image(uint8_t *data[4], const int linesize[4],
+                               int width, int height, int frame_index);
 
+    void stop();
     static Rtsp &getInstance() {
         static Rtsp instance;
         return instance;
