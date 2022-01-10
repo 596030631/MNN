@@ -49,6 +49,7 @@ MNN::Tensor *MNNInterpreter::getSessionInput(const char *name) {
 
 MNN::Tensor *MNNInterpreter::getSessionOutput(const char *name) {
     if (interpreter && session) {
+        LOGD("jjj");
         outputTensor = interpreter->getSessionOutput(session, nullptr);
     }
     LOGW("MNNInterpreter getSessionOutput");
@@ -59,16 +60,18 @@ void MNNInterpreter::testRunSession() {
     if (!sessionRunning && interpreter && session) {
         sessionRunning = true;
         LOGW("MNNInterpreter testRunSession start");
-        interpreter->runSession(session);
+        auto error = interpreter->runSession(session);
         LOGW("MNNInterpreter testRunSession end");
-        MNN::Tensor *outputTensor = getSessionOutput(nullptr);
-        LOGD("XXXX");
-        auto nchwTensor = new MNN::Tensor(outputTensor, MNN::Tensor::CAFFE);
-        outputTensor->copyToHostTensor(nchwTensor);
-        auto score = nchwTensor->host<float>()[0];
-        auto index = nchwTensor->host<float>()[1];
-        LOGD("Score[%f] Index[%f]", score, index);
-        delete nchwTensor;
+        LOGE("RunSession Error:%d:", error);
+        if (error == 0) {
+            outputTensor = getSessionOutput(nullptr);
+            auto nchwTensor = new MNN::Tensor(outputTensor, MNN::Tensor::CAFFE);
+            outputTensor->copyToHostTensor(nchwTensor);
+            auto score = nchwTensor->host<float>()[0];
+            auto index = nchwTensor->host<float>()[1];
+            LOGD("Score[%f] Index[%f]", score, index);
+            delete nchwTensor;
+        }
         sessionRunning = false;
     }
 }
