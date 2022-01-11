@@ -16,6 +16,7 @@
     <string-array name="model_list">
         <item>MobileNet</item>
         <item>SqueezeNet</item>
+        <item>Yolov5nNet</item>
     </string-array>
     <string-array name="demo_list">
         <item>MoreDemo</item>

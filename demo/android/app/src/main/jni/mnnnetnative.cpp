@@ -14,6 +14,7 @@
 #include <MNN/Tensor.hpp>
 #include <memory>
 #include "Rtsp.h"
+#include "ALog.h"
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_taobao_android_mnn_MNNNetNative_nativeCreateNetFromFile(JNIEnv *env, jclass type,
@@ -21,7 +22,7 @@ Java_com_taobao_android_mnn_MNNNetNative_nativeCreateNetFromFile(JNIEnv *env, jc
     const char *modelName = env->GetStringUTFChars(modelName_, 0);
     auto interpreter = MNN::Interpreter::createFromFile(modelName);
     env->ReleaseStringUTFChars(modelName_, modelName);
-
+    LOGW("model fine");
     return (jlong) interpreter;
 }
 

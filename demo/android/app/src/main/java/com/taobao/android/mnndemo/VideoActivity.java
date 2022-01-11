@@ -40,6 +40,7 @@ import java.io.File;
 import java.text.DecimalFormat;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,8 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
     private List<String> mMobileTaiWords;
     private String mSqueezeModelPath;
     private List<String> mSqueezeTaiWords;
+    private String mmYolov5nModelPath;
+    private List<String> mYolov5nTaiWords;
 
     private int mSelectedModelIndex;// current using modle
     private final MNNNetInstance.Config mConfig = new MNNNetInstance.Config();// session config
@@ -83,6 +86,9 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
 
     private final int SqueezeInputWidth = 227;
     private final int SqueezeInputHeight = 227;
+
+    private final int YoloInputWidth = 640;
+    private final int YoloInputHeight = 640;
 
     HandlerThread mThread;
     Handler mHandle;
@@ -140,6 +146,14 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
+
+        mmYolov5nModelPath = getCacheDir() + "yolov5n.mnn";
+        try {
+            Common.copyAssetResource2File(getBaseContext(), Yolov5nModelFileName, mmYolov5nModelPath);
+            mYolov5nTaiWords = TxtFileReader.getUniqueUrls(getBaseContext(), Yolov5nWordsFileName, Integer.MAX_VALUE);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
 
@@ -158,6 +172,8 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             modelPath = mMobileModelPath;
         } else if (mSelectedModelIndex == 1) {
             modelPath = mSqueezeModelPath;
+        } else if (mSelectedModelIndex == 2) {
+            modelPath = mmYolov5nModelPath;
         }
 
         // create net instance
@@ -170,9 +186,17 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             mInputTensor = mSession.getInput(null);
             int[] dimensions = mInputTensor.getDimensions();
             dimensions[0] = 1; // force batch = 1  NCHW  [batch, channels, height, width]
+            dimensions[1] = 3;
+            if (mSelectedModelIndex == 2) {
+                dimensions[2] = YoloInputWidth;
+                dimensions[3] = YoloInputHeight;
+            }
             mInputTensor.reshape(dimensions);
             mSession.reshape();
             mLockUIRender.set(false);
+            Log.w(TAG, Arrays.toString(dimensions));
+        } else {
+            Log.e(TAG, "模型未就绪");
         }
     }
 
@@ -210,22 +234,14 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         mMoreDemoSpinner.setOnItemSelectedListener(VideoActivity.this);
 
         findViewById(R.id.btn_interpreter).setOnClickListener(v -> {
-//            File cache = getExternalCacheDir();
-//            File[] list = cache.listFiles();
-//            if (list != null) {
-//                for (File jpeg : list) {
-
             long start = SystemClock.elapsedRealtime();
-
             new Thread(() -> {
                 int N = 100;
-
                 File file = new File("/sdcard/00000.jpg");
                 Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
                 ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
                 byte[] data = outputStream.toByteArray();
-
                 for (int i = 0; i < N; i++) {
                     if (file.exists() && file.canRead()) {
                          onPreviewFrame(data, 640, 480, 0);
@@ -234,11 +250,6 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
                 float speed = (SystemClock.elapsedRealtime() - start) * 1f / N;
                 Log.w(TAG,String.format("平均识别速度:%fms", speed));
             }).start();
-
-
-//                    break;
-//                }
-//            }
         });
 
 
@@ -313,6 +324,18 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             matrix.invert(matrix);
 
             MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
+        } else if (mSelectedModelIndex == 2) {
+            // input data format
+            Log.d(TAG,"====================");
+            config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+            config.dest = MNNImageProcess.Format.BGR;// input data format
+
+            // matrix transform: dst to src
+            final Matrix matrix = new Matrix();
+            matrix.postScale(YoloInputWidth / (float) (float) imageWidth, YoloInputHeight / (float) imageHeight);
+            matrix.postRotate(needRotateAngle, YoloInputWidth / 2, YoloInputHeight / 2);
+            matrix.invert(matrix);
+            MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
         }
 
         final long startTimestamp = System.nanoTime();
@@ -322,6 +345,7 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
 
         float[] result = output.getFloatData();// get float results
+        Log.d(TAG, Arrays.toString(result));
         final long endTimestamp = System.nanoTime();
         final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
 
