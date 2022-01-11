@@ -3,16 +3,16 @@ package com.taobao.android.mnndemo;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.hardware.SensorManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
-
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.OrientationEventListener;
@@ -26,17 +26,21 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.taobao.android.mnn.MNNForwardType;
 import com.taobao.android.mnn.MNNImageProcess;
 import com.taobao.android.mnn.MNNNetInstance;
 import com.taobao.android.utils.Common;
 import com.taobao.android.utils.TxtFileReader;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.text.DecimalFormat;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,6 +55,9 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
 
     private final String SqueezeModelFileName = "SqueezeNet/v1.1/squeezenet_v1.1.caffe.mnn";
     private final String SqueezeWordsFileName = "SqueezeNet/squeezenet.txt";
+
+    private final String Yolov5nModelFileName = "Yolov5n/yolov5n.mnn";
+    private final String Yolov5nWordsFileName = "Yolov5n/synset_words.txt";
 
     private String mMobileModelPath;
     private List<String> mMobileTaiWords;
@@ -202,6 +209,39 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
         mModelSpinner.setOnItemSelectedListener(VideoActivity.this);
         mMoreDemoSpinner.setOnItemSelectedListener(VideoActivity.this);
 
+        findViewById(R.id.btn_interpreter).setOnClickListener(v -> {
+//            File cache = getExternalCacheDir();
+//            File[] list = cache.listFiles();
+//            if (list != null) {
+//                for (File jpeg : list) {
+
+            long start = SystemClock.elapsedRealtime();
+
+            new Thread(() -> {
+                int N = 100;
+
+                File file = new File("/sdcard/00000.jpg");
+                Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+                byte[] data = outputStream.toByteArray();
+
+                for (int i = 0; i < N; i++) {
+                    if (file.exists() && file.canRead()) {
+                         onPreviewFrame(data, 640, 480, 0);
+                    }
+                }
+                float speed = (SystemClock.elapsedRealtime() - start) * 1f / N;
+                Log.w(TAG,String.format("平均识别速度:%fms", speed));
+            }).start();
+
+
+//                    break;
+//                }
+//            }
+        });
+
+
         // init sub thread handle
         mLockUIRender.set(true);
         clearUIForPrepareNet();
@@ -210,10 +250,10 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.CAMERA}, 10);
             } else {
-                handlePreViewCallBack();
+                // handlePreViewCallBack();
             }
         } else {
-            handlePreViewCallBack();
+            // handlePreViewCallBack();
         }
 
         mThread = new HandlerThread("MNNNet");
@@ -236,7 +276,136 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
                 Toast.makeText(this, "没有获得必要的权限", Toast.LENGTH_SHORT).show();
             }
         }
+    }
 
+
+    private void onPreviewFrame(final byte[] data, final int imageWidth, final int imageHeight, final int angle) {
+        // calculate corrected angle based on camera orientation and mobile rotate degree. (back camrea)
+        int needRotateAngle = (angle + mRotateDegree) % 360;
+        /*
+         *  convert data to input tensor
+         */
+        final MNNImageProcess.Config config = new MNNImageProcess.Config();
+        if (mSelectedModelIndex == 0) {
+            // normalization params
+            config.mean = new float[]{103.94f, 116.78f, 123.68f};
+            config.normal = new float[]{0.017f, 0.017f, 0.017f};
+            config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+            config.dest = MNNImageProcess.Format.BGR;// input data format
+
+            // matrix transform: dst to src
+            Matrix matrix = new Matrix();
+            matrix.postScale(MobileInputWidth / (float) imageWidth, MobileInputHeight / (float) imageHeight);
+            matrix.postRotate(needRotateAngle, MobileInputWidth / 2, MobileInputHeight / 2);
+            matrix.invert(matrix);
+
+            MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
+
+        } else if (mSelectedModelIndex == 1) {
+            // input data format
+            config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+            config.dest = MNNImageProcess.Format.BGR;// input data format
+
+            // matrix transform: dst to src
+            final Matrix matrix = new Matrix();
+            matrix.postScale(SqueezeInputWidth / (float) (float) imageWidth, SqueezeInputHeight / (float) imageHeight);
+            matrix.postRotate(needRotateAngle, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
+            matrix.invert(matrix);
+
+            MNNImageProcess.convertBuffer(data, imageWidth, imageHeight, mInputTensor, config, matrix);
+        }
+
+        final long startTimestamp = System.nanoTime();
+        mSession.run();
+
+        Log.w(TAG, "1");
+        MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
+
+        float[] result = output.getFloatData();// get float results
+        final long endTimestamp = System.nanoTime();
+        final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
+
+        if (result.length > MAX_CLZ_SIZE) {
+            Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
+        }
+
+        final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
+        for (int i = 0; i < result.length; i++) {
+            float confidence = result[i];
+            if (confidence > 0.01) {
+                maybes.add(new AbstractMap.SimpleEntry<>(i, confidence));
+            }
+        }
+
+        Collections.sort(maybes, (o1, o2) -> {
+            if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
+                return 0;
+            }
+            return o1.getValue() > o2.getValue() ? -1 : 1;
+        });
+
+        // show results on ui
+        runOnUiThread(() -> {
+
+            if (maybes.size() == 0) {
+                mFirstResult.setText("no data");
+                mSecondResult.setText("");
+                mThirdResult.setText("");
+            }
+            if (maybes.size() > 0) {
+                mFirstResult.setTextColor(maybes.get(0).getValue() > 0.2 ? Color.BLACK : Color.parseColor("#a4a4a4"));
+                final Integer iKey = maybes.get(0).getKey();
+                final Float fValue = maybes.get(0).getValue();
+                String strWord = "unknown";
+                if (0 == mSelectedModelIndex) {
+                    if (iKey < mMobileTaiWords.size()) {
+                        strWord = mMobileTaiWords.get(iKey);
+                    }
+                } else {
+                    if (iKey < mSqueezeTaiWords.size()) {
+                        strWord = mSqueezeTaiWords.get(iKey);
+                    }
+                }
+                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                mFirstResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+            }
+            if (maybes.size() > 1) {
+                final Integer iKey = maybes.get(1).getKey();
+                final Float fValue = maybes.get(1).getValue();
+                String strWord = "unknown";
+                if (0 == mSelectedModelIndex) {
+                    if (iKey < mMobileTaiWords.size()) {
+                        strWord = mMobileTaiWords.get(iKey);
+                    }
+                } else {
+                    if (iKey < mSqueezeTaiWords.size()) {
+                        strWord = mSqueezeTaiWords.get(iKey);
+                    }
+                }
+                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                mSecondResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+
+            }
+            if (maybes.size() > 2) {
+                final Integer iKey = maybes.get(2).getKey();
+                final Float fValue = maybes.get(2).getValue();
+                String strWord = "unknown";
+                if (0 == mSelectedModelIndex) {
+                    if (iKey < mMobileTaiWords.size()) {
+                        strWord = mMobileTaiWords.get(iKey);
+                    }
+                } else {
+                    if (iKey < mSqueezeTaiWords.size()) {
+                        strWord = mSqueezeTaiWords.get(iKey);
+                    }
+                }
+                final String resKey = mSelectedModelIndex == 1 ? strWord.length() >= 10 ? strWord.substring(10) : strWord : strWord;
+                mThirdResult.setText(resKey + "：" + new DecimalFormat("0.00").format(fValue));
+            }
+
+            mTimeTextView.setText("cost time：" + inferenceTimeCost + "ms");
+        });
     }
 
     private void handlePreViewCallBack() {
@@ -480,14 +649,14 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
 
     @Override
     protected void onPause() {
-        mCameraView.onPause();
+//        mCameraView.onPause();
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        mCameraView.onResume();
+//        mCameraView.onResume();
     }
 
 

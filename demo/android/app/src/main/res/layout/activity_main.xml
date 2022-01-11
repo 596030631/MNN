@@ -106,4 +106,10 @@
             </Spinner>
         </LinearLayout>
     </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_interpreter"
+        android:text="interpreter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
 </RelativeLayout>
