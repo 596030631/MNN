@@ -49,7 +49,6 @@ MNN::Tensor *MNNInterpreter::getSessionInput(const char *name) {
 
 MNN::Tensor *MNNInterpreter::getSessionOutput(const char *name) {
     if (interpreter && session) {
-        LOGD("jjj");
         outputTensor = interpreter->getSessionOutput(session, nullptr);
     }
     LOGW("MNNInterpreter getSessionOutput");

@@ -6,15 +6,12 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
-import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
-import android.view.OrientationEventListener;
 import android.view.View;
-import android.view.ViewStub;
 import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.Spinner;
@@ -244,7 +241,7 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
                         matrix.postScale(MobileInputWidth / (float) bitmap.getWidth(), MobileInputHeight / (float) bitmap.getHeight());
                         matrix.postRotate(0, MobileInputWidth / 2f, MobileInputHeight / 2f);
                         matrix.invert(matrix);
-                        Log.e("RtspActivity", "data.length:"+data.length);
+                        Log.e("RtspActivity", "data.length:" + data.length);
                         MNNImageProcess.convertBuffer(data, bitmap.getWidth(), bitmap.getHeight(), mInputTensor, config, matrix);
                     } else if (mSelectedModelIndex == 1) {
                         // input data format
@@ -286,11 +283,10 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
                         }
                         return o1.getValue() > o2.getValue() ? -1 : 1;
                     });
-
                 }
+                break;
             }
         }
-
 
 
 //        mCameraView.setPreviewCallback(new CameraView.PreviewCallback() {
