@@ -202,7 +202,7 @@ bool Rtsp::playImage(const char *rtspUrl, const char *out_filename) {
     AVPacket pkt;
     AVFormatContext *ifmt_ctx = nullptr;
     AVFrame *frame;
-    AVCodecContext *codec_ctx = nullptr;
+    AVCodecContext *codec_ctx;
     AVStream *in_stream;
     int frame_count;
     AVCodec *codec;
@@ -295,58 +295,58 @@ int Rtsp::save_jpeg(AVFrame *pFrame, char *out_name) {
 
     int width = pFrame->width;
     int height = pFrame->height;
-    AVCodecContext *pCodeCtx;
+    AVCodecContext *o_codec_ctx;
     int ret;
 
-    AVFormatContext *pfmt_ctx = avformat_alloc_context();
-    pfmt_ctx->oformat = av_guess_format("mjpeg", nullptr, nullptr);
+    AVFormatContext *ofmt_ctx = avformat_alloc_context();
+    ofmt_ctx->oformat = av_guess_format("mjpeg", nullptr, nullptr);
 
-    if (avio_open(&pfmt_ctx->pb, out_name, AVIO_FLAG_READ_WRITE) < 0) {
-        printf("Couldn't open output file.");
+    if (avio_open(&ofmt_ctx->pb, out_name, AVIO_FLAG_READ_WRITE) < 0) {
+        LOGE("Couldn't open output file.");
         return -1;
     }
 
-    AVStream *pAVStream = avformat_new_stream(pfmt_ctx, nullptr);
-    if (pAVStream == nullptr) {
+    AVStream *o_stream = avformat_new_stream(ofmt_ctx, nullptr);
+    if (!o_stream) {
+        LOGE("avformat_new_stream failed");
         return -1;
     }
 
-    AVCodecParameters *parameters = pAVStream->codecpar;
-    parameters->codec_id = pfmt_ctx->oformat->video_codec;
+    AVCodecParameters *parameters = o_stream->codecpar;
+    parameters->codec_id = ofmt_ctx->oformat->video_codec;
     parameters->codec_type = AVMEDIA_TYPE_VIDEO;
     parameters->format = AV_PIX_FMT_YUVJ420P;
-//    parameters->format = AV_PIX_FMT_NV21;
     parameters->width = pFrame->width;
     parameters->height = pFrame->height;
 
-    AVCodec *pCodec = avcodec_find_encoder(pAVStream->codecpar->codec_id);
+    AVCodec *o_codec = avcodec_find_encoder(o_stream->codecpar->codec_id);
 
-    if (!pCodec) {
+    if (!o_codec) {
         LOGE("Could not find encoder");
         return -1;
     }
 
-    pCodeCtx = avcodec_alloc_context3(pCodec);
-    if (!pCodeCtx) {
+    o_codec_ctx = avcodec_alloc_context3(o_codec);
+    if (!o_codec_ctx) {
         LOGE("Could not allocate video codec context");
         return -2;
     }
 
-    if ((avcodec_parameters_to_context(pCodeCtx, pAVStream->codecpar)) < 0) {
+    if ((avcodec_parameters_to_context(o_codec_ctx, o_stream->codecpar)) < 0) {
         LOGE("Failed to copy %s codec parameters to decoder context",
              av_get_media_type_string(AVMEDIA_TYPE_VIDEO));
         return -1;
     }
 
-    pCodeCtx->time_base = (AVRational) {1, 25};
+    o_codec_ctx->time_base = (AVRational) {1, 25};
 
-    ret = avcodec_open2(pCodeCtx, pCodec, nullptr);
+    ret = avcodec_open2(o_codec_ctx, o_codec, nullptr);
     if (ret < 0) {
         LOGE("Could not open codec:%d", ret);
         return -2;
     }
 
-    ret = avformat_write_header(pfmt_ctx, nullptr);
+    ret = avformat_write_header(ofmt_ctx, nullptr);
     if (ret < 0) {
         LOGE("write_header fail");
         return -3;
@@ -357,14 +357,14 @@ int Rtsp::save_jpeg(AVFrame *pFrame, char *out_name) {
     AVPacket pkt;
     av_new_packet(&pkt, y_size * 3);
 
-    ret = avcodec_send_frame(pCodeCtx, pFrame);
+    ret = avcodec_send_frame(o_codec_ctx, pFrame);
     if (ret < 0) {
         LOGE("Could not avcodec_send_frame.");
         return -1;
     }
 
     // 得到编码后数据
-    ret = avcodec_receive_packet(pCodeCtx, &pkt);
+    ret = avcodec_receive_packet(o_codec_ctx, &pkt);
     if (ret < 0) {
         LOGE("Could not avcodec_receive_packet");
         return -1;
@@ -373,12 +373,9 @@ int Rtsp::save_jpeg(AVFrame *pFrame, char *out_name) {
 //    LOGW("pkt.size:%d", pkt.size);
     LOGW("pkt.size:%d", pkt.buf->size);
 
-
-
-
 //    MNNInterpreter::getInstance().testRunSession();
 
-    ret = av_write_frame(pfmt_ctx, &pkt);
+    ret = av_write_frame(ofmt_ctx, &pkt);
 
     if (ret < 0) {
         LOGE("Could not av_write_frame");
@@ -388,12 +385,12 @@ int Rtsp::save_jpeg(AVFrame *pFrame, char *out_name) {
     av_packet_unref(&pkt);
 
     //Write Trailer
-    av_write_trailer(pfmt_ctx);
+    av_write_trailer(ofmt_ctx);
 
 
-    avcodec_close(pCodeCtx);
-    avio_close(pfmt_ctx->pb);
-    avformat_free_context(pfmt_ctx);
+    avcodec_close(o_codec_ctx);
+    avio_close(ofmt_ctx->pb);
+    avformat_free_context(ofmt_ctx);
 
     return 0;
 }
@@ -576,27 +573,30 @@ bool Rtsp::swsScale(const char *rtspUrl, const char *out_filename) {
                             MNN::CV::ImageProcess::create(config));
                     MNN::Tensor *input = MNNInterpreter::getInstance().getSessionInput(nullptr);
                     if (input) {
-//                        auto dims = input->shape();
-//                        int size_h = dims[2];
-//                        int size_w = dims[3];
-//                        MNN::CV::Matrix trans;
-//                        //Dst -> [0, 1]
-//                        trans.postScale(1.0 / size_w, 1.0 / size_h);
-//                        //Flip Y  （因为 FreeImage 解出来的图像排列是Y方向相反的）
-//                        trans.postScale(1.0, -1.0, 0.0, 0.5);
-//                        //[0, 1] -> Src
-//                        trans.postScale(dec_frame->width, dec_frame->height);
-//                        pretreat->setMatrix(trans);
-//                        pretreat->convert(dec_frame->data[0], input->width(), input->height(), 0,
-//                                          input);
+                        auto dims = input->shape();
+                        int size_h = dims[2];
+                        int size_w = dims[3];
+                        MNN::CV::Matrix trans;
+                        //Dst -> [0, 1]
+                        trans.postScale(1.0 / size_w, 1.0 / size_h);
+                        //Flip Y  （因为 FreeImage 解出来的图像排列是Y方向相反的）
+                        trans.postScale(1.0, -1.0, 0.0, 0.5);
+                        //[0, 1] -> Src
+                        trans.postScale(dec_frame->width, dec_frame->height);
+                        pretreat->setMatrix(trans);
+                        pretreat->convert(dec_frame->data[0], input->width(), input->height(), 0,
+                                          input);
 
-
-                        LOGD("ZZ");
-                        for (int i = 0; i < input->width() * input->height(); ++i) {
-                            input->host<int>()[i] = 11;
-                        }
-                        LOGD("CC");
-
+//                        LOGD("ZZ");
+//
+//                        for (int i = 0; i < input->shape().size(); ++i) {
+//                            LOGD("INPUT SHAPE %d", input->shape()[i]);
+//                        }
+//
+//                        for (int i = 0; i < input->width() * input->height(); ++i) {
+//                            input->host<int>()[i] = 11;
+//                        }
+//                        LOGD("CC");
                         MNNInterpreter::getInstance().testRunSession();
                     } else {
                         LOGD("输入未就绪");

@@ -18,7 +18,6 @@ public class MNNNetInstance {
         return new MNNNetInstance(instance);
     }
 
-
     public static class Config {
         public int forwardType = MNNForwardType.FORWARD_CPU.type;
         public int numThread = 4;

@@ -3,11 +3,15 @@ package com.taobao.android.mnndemo;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.util.Log;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.ViewStub;
@@ -21,12 +25,18 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.taobao.android.mnn.MNNForwardType;
+import com.taobao.android.mnn.MNNImageProcess;
 import com.taobao.android.mnn.MNNNetInstance;
 import com.taobao.android.utils.Common;
 import com.taobao.android.utils.TxtFileReader;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RtspVideoActivity extends AppCompatActivity implements AdapterView.OnItemSelectedListener {
@@ -144,7 +154,7 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
         mForwardTypeSpinner = (Spinner) findViewById(R.id.forwardTypeSpinner);
         findViewById(R.id.btn_start).setOnClickListener(v -> {
-            new Thread(() -> mNetInstance.openRtspSwsScale(
+            new Thread(() -> mNetInstance.openRtspImage(
                     "rtsp://admin:123456@192.168.31.46:3389/cam/realmonitor?channel=1&subtype=1"
 //                    "rtsp://admin:123456@58.56.152.66:8073/cam/realmonitor?channel=1&subtype=1"
                     , getExternalCacheDir().getAbsolutePath())).start();
@@ -154,6 +164,14 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
         findViewById(R.id.btn_stop).setOnClickListener(v -> {
             mNetInstance.stopRtsp();
         });
+
+        findViewById(R.id.btn_interpreter).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                new Thread(() -> interpreter()).start();
+            }
+        });
+
         mThreadNumSpinner = (Spinner) findViewById(R.id.threadsSpinner);
         mThreadNumSpinner.setSelection(2);
         mModelSpinner = (Spinner) findViewById(R.id.modelTypeSpinner);
@@ -176,11 +194,7 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.CAMERA}, 10);
-            } else {
-                handlePreViewCallBack();
             }
-        } else {
-            handlePreViewCallBack();
         }
 
         mThread = new HandlerThread("MNNNet");
@@ -198,7 +212,6 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
         if (10 == requestCode) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                handlePreViewCallBack();
             } else {
                 Toast.makeText(this, "没有获得必要的权限", Toast.LENGTH_SHORT).show();
             }
@@ -206,7 +219,77 @@ public class RtspVideoActivity extends AppCompatActivity implements AdapterView.
 
     }
 
-    private void handlePreViewCallBack() {
+    private void interpreter() {
+
+        File cache = getExternalCacheDir();
+        File[] list = cache.listFiles();
+        if (list != null) {
+            for (File jpeg : list) {
+                if (jpeg != null && jpeg.exists() && jpeg.canRead()) {
+                    Bitmap bitmap = BitmapFactory.decodeFile(jpeg.getAbsolutePath());
+                    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+                    byte[] data = outputStream.toByteArray();
+
+                    final MNNImageProcess.Config config = new MNNImageProcess.Config();
+                    if (mSelectedModelIndex == 0) {
+                        // normalization params
+                        config.mean = new float[]{103.94f, 116.78f, 123.68f};
+                        config.normal = new float[]{0.017f, 0.017f, 0.017f};
+                        config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                        config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                        // matrix transform: dst to src
+                        Matrix matrix = new Matrix();
+                        matrix.postScale(MobileInputWidth / (float) bitmap.getWidth(), MobileInputHeight / (float) bitmap.getHeight());
+                        matrix.postRotate(0, MobileInputWidth / 2f, MobileInputHeight / 2f);
+                        matrix.invert(matrix);
+                        Log.e("RtspActivity", "data.length:"+data.length);
+                        MNNImageProcess.convertBuffer(data, bitmap.getWidth(), bitmap.getHeight(), mInputTensor, config, matrix);
+                    } else if (mSelectedModelIndex == 1) {
+                        // input data format
+                        config.source = MNNImageProcess.Format.YUV_NV21;// input source format
+                        config.dest = MNNImageProcess.Format.BGR;// input data format
+
+                        // matrix transform: dst to src
+                        final Matrix matrix = new Matrix();
+                        matrix.postScale(SqueezeInputWidth / (float) (float) bitmap.getWidth(), SqueezeInputHeight / (float) bitmap.getHeight());
+                        matrix.postRotate(0, SqueezeInputWidth / 2, SqueezeInputWidth / 2);
+                        matrix.invert(matrix);
+                        MNNImageProcess.convertBuffer(data, bitmap.getWidth(), bitmap.getHeight(), mInputTensor, config, matrix);
+                    }
+
+                    final long startTimestamp = System.nanoTime();
+                    mSession.run();
+
+                    MNNNetInstance.Session.Tensor output = mSession.getOutput(null);
+
+                    float[] result = output.getFloatData();// get float results
+                    final long endTimestamp = System.nanoTime();
+                    final float inferenceTimeCost = (endTimestamp - startTimestamp) / 1000000.0f;
+
+                    if (result.length > MAX_CLZ_SIZE) {
+                        Log.w(TAG, "session result too big (" + result.length + "), model incorrect ?");
+                    }
+
+                    final List<Map.Entry<Integer, Float>> maybes = new ArrayList<>();
+                    for (int i = 0; i < result.length; i++) {
+                        float confidence = result[i];
+                        if (confidence > 0.01) {
+                            maybes.add(new AbstractMap.SimpleEntry<>(i, confidence));
+                        }
+                    }
+
+                    Collections.sort(maybes, (o1, o2) -> {
+                        if (Math.abs(o1.getValue() - o2.getValue()) <= Float.MIN_NORMAL) {
+                            return 0;
+                        }
+                        return o1.getValue() > o2.getValue() ? -1 : 1;
+                    });
+
+                }
+            }
+        }
 
 
 
